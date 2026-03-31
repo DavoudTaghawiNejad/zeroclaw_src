@@ -765,9 +765,13 @@ fn supports_runtime_model_switch(channel_name: &str) -> bool {
     matches!(channel_name, "telegram" | "discord" | "matrix" | "slack")
 }
 
-fn parse_runtime_command(channel_name: &str, content: &str) -> Option<ChannelRuntimeCommand> {
+fn parse_runtime_command(
+    channel_name: &str,
+    content: &str,
+    command_prefix: &str,
+) -> Option<ChannelRuntimeCommand> {
     let trimmed = content.trim();
-    if !trimmed.starts_with('/') {
+    if !trimmed.starts_with(command_prefix) {
         return None;
     }
 
@@ -779,11 +783,16 @@ fn parse_runtime_command(channel_name: &str, content: &str) -> Option<ChannelRun
         .unwrap_or(command_token)
         .to_ascii_lowercase();
 
-    match base_command.as_str() {
-        // `/new` is available on every channel — no model-switch gate.
-        "/new" => Some(ChannelRuntimeCommand::NewSession),
+    // Strip the prefix so we can match on the bare command name.
+    let command_name = base_command
+        .strip_prefix(command_prefix)
+        .unwrap_or(&base_command);
+
+    match command_name {
+        // `new` is available on every channel — no model-switch gate.
+        "new" => Some(ChannelRuntimeCommand::NewSession),
         // Model/provider switching is channel-gated.
-        "/models" if supports_runtime_model_switch(channel_name) => {
+        "models" if supports_runtime_model_switch(channel_name) => {
             if let Some(provider) = parts.next() {
                 Some(ChannelRuntimeCommand::SetProvider(
                     provider.trim().to_string(),
@@ -792,7 +801,7 @@ fn parse_runtime_command(channel_name: &str, content: &str) -> Option<ChannelRun
                 Some(ChannelRuntimeCommand::ShowProviders)
             }
         }
-        "/model" if supports_runtime_model_switch(channel_name) => {
+        "model" if supports_runtime_model_switch(channel_name) => {
             let model = parts.collect::<Vec<_>>().join(" ").trim().to_string();
             if model.is_empty() {
                 Some(ChannelRuntimeCommand::ShowModel)
@@ -800,7 +809,7 @@ fn parse_runtime_command(channel_name: &str, content: &str) -> Option<ChannelRun
                 Some(ChannelRuntimeCommand::SetModel(model))
             }
         }
-        "/config" if supports_runtime_model_switch(channel_name) => {
+        "config" if supports_runtime_model_switch(channel_name) => {
             Some(ChannelRuntimeCommand::ShowConfig)
         }
         _ => None,
@@ -1756,7 +1765,11 @@ async fn handle_runtime_command_if_needed(
     msg: &traits::ChannelMessage,
     target_channel: Option<&Arc<dyn Channel>>,
 ) -> bool {
-    let Some(command) = parse_runtime_command(&msg.channel, &msg.content) else {
+    let Some(command) = parse_runtime_command(
+        &msg.channel,
+        &msg.content,
+        &ctx.prompt_config.channels_config.command_prefix,
+    ) else {
         return false;
     };
 
