@@ -279,6 +279,7 @@ enum ChannelRuntimeCommand {
     SetModel(String),
     ShowConfig,
     NewSession,
+    ShowHelp,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -771,8 +772,10 @@ fn parse_runtime_command(
     command_prefix: &str,
 ) -> Option<ChannelRuntimeCommand> {
     let trimmed = content.trim();
-    if !trimmed.starts_with(command_prefix) {
+    if !trimmed.starts_with(command_prefix) && !trimmed.starts_with("/help") {
         return None;
+    } else if trimmed.contains("help") {
+        return Some(ChannelRuntimeCommand::ShowHelp);
     }
 
     let mut parts = trimmed.split_whitespace();
@@ -1858,6 +1861,18 @@ async fn handle_runtime_command_if_needed(
             }
             mark_sender_for_new_session(ctx, &sender_key);
             "Conversation history cleared. Starting fresh.".to_string()
+        }
+        ChannelRuntimeCommand::ShowHelp => {
+            let prefix = &ctx.prompt_config.channels_config.command_prefix;
+            format!(
+                "`{prefix}new` — start a new session\n\
+                 `{prefix}models` — show providers\n\
+                 `{prefix}models <provider>` — set provider\n\
+                 `{prefix}model` — show current model\n\
+                 `{prefix}model <model>` — set model\n\
+                 `{prefix}help` — show this help\n\n\
+                 Command prefix configured via `channels_config.command_prefix` in config.toml"
+            )
         }
     };
 
